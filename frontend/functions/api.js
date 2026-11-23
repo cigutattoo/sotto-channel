@@ -5,7 +5,7 @@
 // 支持 cookie session (credentials: include)
 // 注入 Internal Service Token 防止第三方调用后端
 
-const RAILWAY_API = 'https://sotto-channel-backend.up.railway.app' // TODO: 部署后改真实域名
+const RAILWAY_API = 'https://sotto-backend-production-7df19a3f.up.railway.app'
 
 export async function onRequest(context) {
   const { request, next, env } = context
