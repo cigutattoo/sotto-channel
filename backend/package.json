@@ -1,0 +1,30 @@
+{
+  "name": "sotto-channel-backend",
+  "version": "0.1.0",
+  "description": "Sotto 频道目录站后端 (Express + Supabase + Upstash Redis)",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js",
+    "check:redis": "node -e \"require('./src/lib/redis-client').connect().then(()=>console.log('REDIS OK')).catch(e=>{console.error(e);process.exit(1)})\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "axios": "^1.21.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "ioredis": "^5.4.1",
+    "pino": "^9.5.0",
+    "pino-http": "^10.2.0",
+    "resend": "^4.0.1",
+    "undici": "^7.30.2",
+    "zod": "^3.23.8"
+  }
+}
