@@ -41,7 +41,10 @@ function errorHandler(err, req, res, _next) {
 
   // 未知错误: 500
   req.log?.error({ err }, 'unhandled error');
-  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR'), req));
+  // DEBUG: 临时透出真实错误
+  const hint = err.message || String(err);
+  const details = err.stack ? err.stack.substring(0, 300) : undefined;
+  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR', { hint, details }), req));
 }
 
 // 404 兜底
