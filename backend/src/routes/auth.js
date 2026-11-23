@@ -135,3 +135,18 @@ router.delete('/debug-clear-locks', asyncHandler(async (req, res) => {
   }
   res.json({ ok: true, deleted });
 }));
+
+// --- TEMP DEBUG: 直接 SET 验证码 ---
+router.post('/debug-set-code', asyncHandler(async (req, res) => {
+  const authHeader = req.headers['x-debug-key'];
+  if (authHeader !== 'sotto-debug-2026') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const redis = require('../lib/redis-client');
+  const r = redis.getClient();
+  const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
+  const code = req.query.code || '999999';
+  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
+  await r.setex(`verification:${emailHash}`, 900, code);
+  res.json({ ok: true, email, code });
+}));
