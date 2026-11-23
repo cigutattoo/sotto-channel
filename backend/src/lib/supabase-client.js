@@ -26,13 +26,14 @@ function getClient() {
 async function verifyConnection() {
   try {
     const supabase = getClient();
-    // 最简单的查询: categories 表行数 (不抛错就 OK)
-    const { count, error } = await supabase
+    // 简单查询: categories 表取 1 行 (比 count+head 更兼容)
+    const { data, error } = await supabase
       .from('categories')
-      .select('*', { count: 'exact', head: true });
+      .select('id')
+      .limit(1);
 
     if (error) throw error;
-    console.log(`[supabase] connected ✅ categories=${count ?? 'n/a'}`);
+    console.log(`[supabase] connected ✅ sample=${data?.length ?? 0}`);
     return true;
   } catch (err) {
     console.error('[supabase] connection FAILED:', err.message);
