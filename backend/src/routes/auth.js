@@ -162,63 +162,45 @@ router.post('/debug-atomic-verify', asyncHandler(async (req, res) => {
   res.json({ ok: true, emailHash, key, code, stored, match: stored === code, verify: verifyResult });
 }));
 
-// --- TEMP DEBUG: 完整 E2E 单请求 (模拟 send-code → verify → /me → logout) ---
-router.post('/debug-full-e2e', asyncHandler(async (req, res) => {
+// --- TEMP DEBUG: send-code REAL route → GET key → verifyCode all in ONE request ---
+router.post('/debug-send-then-verify', asyncHandler(async (req, res) => {
   const authHeader = req.headers['x-debug-key'];
   if (authHeader !== 'sotto-debug-2026') return res.status(403).json({ error: 'forbidden' });
 
   const redis = require('../lib/redis-client');
   const verification = require('../lib/verification');
-  const sessionLib = require('../lib/session');
-  const { getClient: supabase } = require('../lib/supabase-client');
-
+  const r = redis.getClient();
   const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
   const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-  const code = verification.generateCode();
-  const r = redis.getClient();
+  const key = `verification:${emailHash}`;
 
-  const steps = {};
-
-  // Step 1: 清锁 (模拟 clear all locks)
-  const deleted = [];
-  for (const k of [`rl:send:${email}`, `rl:verify:${email}`, `rl:resend:${email}`,
-    `verification:${emailHash}`, `verification:${emailHash}:attempts`]) {
-    const n = await r.del(k);
-    if (n > 0) deleted.push(k);
+  // Step 1: 清所有锁
+  for (const k of [`rl:send:${email}`, `rl:verify:${email}`, `rl:resend:${email}`, key, `${key}:attempts`]) {
+    await r.del(k);
   }
-  steps.clearLocks = { deleted };
 
-  // Step 2: storeCode (send-code 里的正常逻辑)
+  // Step 2: generateCode + storeCode (跟 send-code 完全一样的逻辑, 跳过 rateLimit 和 sendEmail)
+  const code = verification.generateCode();
   await verification.storeCode(emailHash, code);
-  steps.storeCode = { code, stored: await r.get(`verification:${emailHash}`) };
 
-  // Step 3: verifyCode
-  let verified = false, verifyErr = null;
+  // Step 3: 立刻 GET 验证 key 里确实有值
+  const stored = await r.get(key);
+
+  // Step 4: verifyCode
+  let verifyResult;
   try {
     await verification.verifyCode(emailHash, code);
-    verified = true;
-  } catch (e) { verifyErr = { code: e.code, message: e.message }; }
-  steps.verifyCode = { ok: verified, error: verifyErr };
-
-  if (verified) {
-    // Step 4: Supabase 查询用户 (verify-code 路由的正常逻辑)
-    const emailMasked = email.replace(/^(.).*@(.*)$/, '$1***@$2');
-    const db = supabase();
-    let user = await db.from('users').select('id, email_verified').eq('email_hash', emailHash).maybeSingle();
-    if (!user.data) {
-      const ins = await db.from('users').insert({ email, email_hash: emailHash, email_masked: emailMasked, email_verified: true, created_at: new Date().toISOString() }).select('id').single();
-      user = { data: ins.data };
-    }
-    steps.lookupUser = { userId: user.data.id };
-
-    // Step 5: 创建 session
-    const { token, expiresAt } = await sessionLib.createSession(user.data.id, '::1', 'debug-test');
-    steps.createSession = { tokenLen: token.length, expiresAt };
-
-    // Step 6: 直接调 /me 逻辑
-    const meUser = await sessionLib.getUserByToken(token);
-    steps.getMe = { email: meUser.email, role: meUser.role, status: meUser.status };
+    verifyResult = { ok: true };
+  } catch (e) {
+    verifyResult = { ok: false, code: e.code, message: e.message };
   }
 
-  res.json({ ok: true, email, ...steps });
+  res.json({
+    ok: true,
+    email, emailHash, key, code,
+    stored, storedMatch: stored === code,
+    verify: verifyResult,
+    // 关键: 跟 send-code 走完全相同的 storeCode 逻辑, 所以如果这个过了
+    // 那说明 send-code 的 storeCode 也过了, 问题在跨请求
+  });
 }));
