@@ -17,24 +17,31 @@ const emailSchema = z.object({ email: z.string().email('邮箱格式不正确').
 const emailRateLimit = rateLimit({ limit: 5, windowSec: 3600, keyFn: req => `send:${req.body?.email || req.ip}` });
 
 router.post('/send-code', emailRateLimit, asyncHandler(async (req, res) => {
-  const { email } = emailSchema.parse(req.body);
-  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-
-  const db = supabase();
-  const { data: user } = await db.from('users').select('id, email_verified').eq('email_hash', emailHash).maybeSingle();
-
-  const code = generateCode();
-  await storeCode(emailHash, code);
-
   try {
-    const tmpl = emailLib.verificationEmail(code);
-    await emailLib.sendEmail({ to: email, ...tmpl });
-  } catch (sendErr) {
-    req.log?.error({ err: sendErr }, 'resend send failed');
-    throw new AppError('INTERNAL_ERROR', { hint: '验证码生成成功但邮件发送失败, 请稍后重试' });
-  }
+    const { email } = emailSchema.parse(req.body);
+    const emailHash = crypto.createHash('sha256').update(email).digest('hex');
 
-  res.json({ ok: true, sent_to: `${email.slice(0, 2)}***@${email.split('@')[1]}` });
+    const db = supabase();
+    const { data: user } = await db.from('users').select('id, email_verified').eq('email_hash', emailHash).maybeSingle();
+
+    const code = generateCode();
+    await storeCode(emailHash, code);
+
+    try {
+      const tmpl = emailLib.verificationEmail(code);
+      await emailLib.sendEmail({ to: email, ...tmpl });
+    } catch (sendErr) {
+      req.log?.error({ err: sendErr }, 'resend send failed');
+      throw new AppError('INTERNAL_ERROR', { hint: '验证码生成成功但邮件发送失败, 请稍后重试' });
+    }
+
+    res.json({ ok: true, sent_to: `${email.slice(0, 2)}***@${email.split('@')[1]}` });
+  } catch (err) {
+    req.log?.error({ err }, 'send-code FAILED');
+    // 临时调试: 透出真实错误
+    if (err instanceof AppError) throw err;
+    throw new AppError('INTERNAL_ERROR', { hint: err.message || String(err) });
+  }
 }));
 
 router.post('/verify-code', rateLimit({ limit: 10, windowSec: 60, keyFn: req => `verify:${req.body?.email || req.ip}` }), asyncHandler(async (req, res) => {

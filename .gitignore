@@ -21,3 +21,7 @@ Thumbs.db
 # OS
 *.tmp
 *.swp
+
+# Local diagnostics
+.env.production
+backend/scripts/diagnose-*.js
