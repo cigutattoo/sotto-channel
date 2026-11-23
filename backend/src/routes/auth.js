@@ -147,6 +147,8 @@ router.post('/debug-set-code', asyncHandler(async (req, res) => {
   const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
   const code = req.query.code || '999999';
   const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-  await r.setex(`verification:${emailHash}`, 900, code);
-  res.json({ ok: true, email, code });
+  const key = `verification:${emailHash}`;
+  await r.setex(key, 900, code);
+  const check = await r.get(key);
+  res.json({ ok: true, email, code, key, stored: check, match: check === code });
 }));
