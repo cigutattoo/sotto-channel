@@ -110,3 +110,28 @@ router.post('/resend-code', rateLimit({ limit: 3, windowSec: 60, keyFn: req => `
 }));
 
 module.exports = router;
+
+// --- TEMP DEBUG: 清 rate limit locks ---
+// 部署完后立刻删除!
+router.delete('/debug-clear-locks', asyncHandler(async (req, res) => {
+  const authHeader = req.headers['x-debug-key'];
+  if (authHeader !== 'sotto-debug-2026') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const redis = require('../lib/redis-client');
+  const r = redis.getClient();
+  const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
+  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
+  const deleted = [];
+  for (const key of [
+    `rl:send:${email}`,
+    `rl:verify:${email}`,
+    `rl:resend:${email}`,
+    `verification:${emailHash}`,
+    `verification:${emailHash}:attempts`,
+  ]) {
+    const n = await r.del(key);
+    if (n > 0) deleted.push(key);
+  }
+  res.json({ ok: true, deleted });
+}));
