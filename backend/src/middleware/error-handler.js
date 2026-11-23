@@ -41,7 +41,9 @@ function errorHandler(err, req, res, _next) {
 
   // 未知错误: 500
   req.log?.error({ err }, 'unhandled error');
-  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR'), req));
+  // DEBUG TEMP
+  const hint = err.message || String(err);
+  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR', { hint }), req));
 }
 
 // 404 兜底
