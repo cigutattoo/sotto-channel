@@ -136,19 +136,28 @@ router.delete('/debug-clear-locks', asyncHandler(async (req, res) => {
   res.json({ ok: true, deleted });
 }));
 
-// --- TEMP DEBUG: 直接 SET 验证码 ---
-router.post('/debug-set-code', asyncHandler(async (req, res) => {
+// --- TEMP DEBUG: SET + verify ATOMICALLY in one request ---
+router.post('/debug-atomic-verify', asyncHandler(async (req, res) => {
   const authHeader = req.headers['x-debug-key'];
-  if (authHeader !== 'sotto-debug-2026') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
+  if (authHeader !== 'sotto-debug-2026') return res.status(403).json({ error: 'forbidden' });
   const redis = require('../lib/redis-client');
+  const verification = require('../lib/verification');
   const r = redis.getClient();
   const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
-  const code = req.query.code || '999999';
+  const code = req.query.code || '123456';
   const emailHash = crypto.createHash('sha256').update(email).digest('hex');
   const key = `verification:${emailHash}`;
+  
   await r.setex(key, 900, code);
-  const check = await r.get(key);
-  res.json({ ok: true, email, code, key, stored: check, match: check === code });
+  const stored = await r.get(key);
+  
+  let verifyResult;
+  try {
+    await verification.verifyCode(emailHash, code);
+    verifyResult = { ok: true };
+  } catch (e) {
+    verifyResult = { ok: false, code: e.code, message: e.message };
+  }
+  
+  res.json({ ok: true, emailHash, key, code, stored, match: stored === code, verify: verifyResult });
 }));
