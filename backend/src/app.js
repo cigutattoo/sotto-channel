@@ -82,8 +82,9 @@ function createApp() {
       catch { result.redis = false; result.ok = false; }
     } else { result.redis = false; result.ok = false; }
 
-    result.db = await supabase.verifyConnection();
-    if (!result.db) result.ok = false;
+    const dbResult = await supabase.verifyConnection();
+    result.db = dbResult.ok;
+    if (!dbResult.ok) { result.ok = false; result.dbError = dbResult.error; }
 
     result.email = !!process.env.RESEND_API_KEY;
 

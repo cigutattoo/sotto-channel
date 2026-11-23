@@ -34,10 +34,11 @@ async function verifyConnection() {
 
     if (error) throw error;
     console.log(`[supabase] connected ✅ sample=${data?.length ?? 0}`);
-    return true;
+    return { ok: true };
   } catch (err) {
     console.error('[supabase] connection FAILED:', err.message);
-    return false;
+    console.error('[supabase] stack:', err.stack?.substring(0, 500));
+    return { ok: false, error: err.message };
   }
 }
 
