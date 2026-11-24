@@ -82,7 +82,10 @@ router.get('/:id', asyncHandler(async (req, res) => {
     .eq('id', id)
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    console.error('[channel-detail] Supabase error:', JSON.stringify(error));
+    throw error;
+  }
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND'); // 不能泄露 pending/rejected
 
