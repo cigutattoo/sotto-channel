@@ -5,6 +5,11 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.railway
+.env.production
+
+# Keep .env.example as template
+!.env.example
 
 # Build outputs
 dist/
@@ -23,5 +28,4 @@ Thumbs.db
 *.swp
 
 # Local diagnostics
-.env.production
 backend/scripts/diagnose-*.js
