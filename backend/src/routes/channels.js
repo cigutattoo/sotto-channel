@@ -76,33 +76,35 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const db = supabase();
   const id = req.params.id;
 
-  // 分步查询定位错误 — 先查基本 channel + categories JOIN
+  // 简化版: 分步查询避免复杂 JOIN 问题
   const { data, error } = await db
     .from('channels')
-    .select('*, categories!channels_category_id_fkey(name_zh, name_en, slug)')
+    .select('*')
     .eq('id', id)
     .maybeSingle();
 
   if (error) {
-    console.error('[channel-detail] step1 error:', error.code, error.message);
+    console.error('[channel-detail] error:', error.code, error.message);
     throw error;
   }
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
 
-  // 再查 owner
-  const { data: ownerData, error: ownerErr } = await db
+  // 补充 categories
+  const { data: cat } = await db
+    .from('categories')
+    .select('name_zh, name_en, slug, icon')
+    .eq('id', data.category_id)
+    .maybeSingle();
+  if (cat) data.categories = cat;
+
+  // 补充 owner
+  const { data: owner } = await db
     .from('users')
     .select('email_masked, display_name')
     .eq('id', data.owner_id)
     .maybeSingle();
-
-  if (ownerErr) {
-    console.error('[channel-detail] owner query error:', ownerErr.message);
-    // owner 失败不阻塞
-  } else {
-    data.owner = ownerData;
-  }
+  if (owner) data.owner = owner;
 
   // view_count +1
   await db.rpc('increment_view_count', { channel_id: id }).catch(() => {});
