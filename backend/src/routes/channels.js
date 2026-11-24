@@ -76,21 +76,36 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const db = supabase();
   const id = req.params.id;
 
+  // 分步查询定位错误 — 先查基本 channel + categories JOIN
   const { data, error } = await db
     .from('channels')
-    .select('*, categories!channels_category_id_fkey(name_zh, name_en, slug, icon), owner:users(email_masked, display_name)')
+    .select('*, categories!channels_category_id_fkey(name_zh, name_en, slug)')
     .eq('id', id)
     .maybeSingle();
 
   if (error) {
-    console.error('[channel-detail] Supabase error:', JSON.stringify(error));
+    console.error('[channel-detail] step1 error:', error.code, error.message);
     throw error;
   }
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
-  if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND'); // 不能泄露 pending/rejected
+  if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
+
+  // 再查 owner
+  const { data: ownerData, error: ownerErr } = await db
+    .from('users')
+    .select('email_masked, display_name')
+    .eq('id', data.owner_id)
+    .maybeSingle();
+
+  if (ownerErr) {
+    console.error('[channel-detail] owner query error:', ownerErr.message);
+    // owner 失败不阻塞
+  } else {
+    data.owner = ownerData;
+  }
 
   // view_count +1
-  await db.rpc('increment_view_count', { channel_id: id }).catch(() => { /* 如果没建 RPC 就忽略 */ });
+  await db.rpc('increment_view_count', { channel_id: id }).catch(() => {});
 
   res.json(data);
 }));
