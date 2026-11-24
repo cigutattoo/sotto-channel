@@ -25,19 +25,14 @@ async function verifyCode(emailHash, code) {
   if (!redis.isAvailable()) throw new AppError('REDIS_DOWN_FATAL');
   const r = redis.getClient();
 
-  // DEBUG TEMP
-  const key = _keyVerif(emailHash);
-  const attemptsKey = _keyAttempts(emailHash);
-  const expected = await r.get(key);
-  console.log('[verifyCode] key=', key, 'expected=', expected, 'code=', code);
-
   // 1) 检查是否被锁
-  const attempts = parseInt(await r.get(attemptsKey) || '0', 10);
+  const attempts = parseInt(await r.get(_keyAttempts(emailHash)) || '0', 10);
   if (attempts >= MAX_ATTEMPTS) {
     throw new AppError('CODE_TOO_MANY_ATTEMPTS');
   }
 
   // 2) 对比
+  const expected = await r.get(_keyVerif(emailHash));
   if (!expected) throw new AppError('CODE_EXPIRED');
   if (expected !== code) {
     // 输错 → 增加计数

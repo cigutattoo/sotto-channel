@@ -21,7 +21,7 @@ router.post('/send-code', emailRateLimit, asyncHandler(async (req, res) => {
   const emailHash = crypto.createHash('sha256').update(email).digest('hex');
 
   const db = supabase();
-  const { data: user } = await db.from('users').select('id, email_verified').eq('email_hash', emailHash).maybeSingle();
+  await db.from('users').select('id, email_verified').eq('email_hash', emailHash).maybeSingle();
 
   const code = generateCode();
   await storeCode(emailHash, code);
@@ -110,97 +110,3 @@ router.post('/resend-code', rateLimit({ limit: 3, windowSec: 60, keyFn: req => `
 }));
 
 module.exports = router;
-
-// --- TEMP DEBUG: 清 rate limit locks ---
-// 部署完后立刻删除!
-router.delete('/debug-clear-locks', asyncHandler(async (req, res) => {
-  const authHeader = req.headers['x-debug-key'];
-  if (authHeader !== 'sotto-debug-2026') {
-    return res.status(403).json({ error: 'forbidden' });
-  }
-  const redis = require('../lib/redis-client');
-  const r = redis.getClient();
-  const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
-  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-  const deleted = [];
-  for (const key of [
-    `rl:send:${email}`,
-    `rl:verify:${email}`,
-    `rl:resend:${email}`,
-    `verification:${emailHash}`,
-    `verification:${emailHash}:attempts`,
-  ]) {
-    const n = await r.del(key);
-    if (n > 0) deleted.push(key);
-  }
-  res.json({ ok: true, deleted });
-}));
-
-// --- TEMP DEBUG: SET + verify ATOMICALLY in one request ---
-router.post('/debug-atomic-verify', asyncHandler(async (req, res) => {
-  const authHeader = req.headers['x-debug-key'];
-  if (authHeader !== 'sotto-debug-2026') return res.status(403).json({ error: 'forbidden' });
-  const redis = require('../lib/redis-client');
-  const verification = require('../lib/verification');
-  const r = redis.getClient();
-  const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
-  const code = req.query.code || '123456';
-  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-  const key = `verification:${emailHash}`;
-  
-  await r.setex(key, 900, code);
-  const stored = await r.get(key);
-  
-  let verifyResult;
-  try {
-    await verification.verifyCode(emailHash, code);
-    verifyResult = { ok: true };
-  } catch (e) {
-    verifyResult = { ok: false, code: e.code, message: e.message };
-  }
-  
-  res.json({ ok: true, emailHash, key, code, stored, match: stored === code, verify: verifyResult });
-}));
-
-// --- TEMP DEBUG: send-code REAL route → GET key → verifyCode all in ONE request ---
-router.post('/debug-send-then-verify', asyncHandler(async (req, res) => {
-  const authHeader = req.headers['x-debug-key'];
-  if (authHeader !== 'sotto-debug-2026') return res.status(403).json({ error: 'forbidden' });
-
-  const redis = require('../lib/redis-client');
-  const verification = require('../lib/verification');
-  const r = redis.getClient();
-  const email = (req.query.email || 'cigutattoo@163.com').toLowerCase();
-  const emailHash = crypto.createHash('sha256').update(email).digest('hex');
-  const key = `verification:${emailHash}`;
-
-  // Step 1: 清所有锁
-  for (const k of [`rl:send:${email}`, `rl:verify:${email}`, `rl:resend:${email}`, key, `${key}:attempts`]) {
-    await r.del(k);
-  }
-
-  // Step 2: generateCode + storeCode (跟 send-code 完全一样的逻辑, 跳过 rateLimit 和 sendEmail)
-  const code = verification.generateCode();
-  await verification.storeCode(emailHash, code);
-
-  // Step 3: 立刻 GET 验证 key 里确实有值
-  const stored = await r.get(key);
-
-  // Step 4: verifyCode
-  let verifyResult;
-  try {
-    await verification.verifyCode(emailHash, code);
-    verifyResult = { ok: true };
-  } catch (e) {
-    verifyResult = { ok: false, code: e.code, message: e.message };
-  }
-
-  res.json({
-    ok: true,
-    email, emailHash, key, code,
-    stored, storedMatch: stored === code,
-    verify: verifyResult,
-    // 关键: 跟 send-code 走完全相同的 storeCode 逻辑, 所以如果这个过了
-    // 那说明 send-code 的 storeCode 也过了, 问题在跨请求
-  });
-}));
