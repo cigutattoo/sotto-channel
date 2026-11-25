@@ -78,21 +78,31 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
   console.error('[DEBUG] entering detail, id=', id);
 
-  // STEP 1: 先查 channels 表 (最简单的查询)
+  // STEP 1: 先查 channels 表
   const { data, error } = await db
     .from('channels')
     .select('*')
     .eq('id', id)
     .maybeSingle();
 
-  console.error('[DEBUG] step1 error:', error ? JSON.stringify(error) : 'none');
-  console.error('[DEBUG] step1 data:', data ? JSON.stringify(data).substring(0, 200) : 'null');
-
-  if (error) { console.error('[DEBUG] step1 throws'); throw error; }
+  if (error) throw error;
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
 
-  res.json({ step: 1, ok: true, name: data.name, status: data.status });
+  console.error('[DEBUG] step1 ok, category_id=', data.category_id);
+
+  // STEP 2: 补充 categories
+  const { data: cat, error: catErr } = await db
+    .from('categories')
+    .select('name_zh, name_en, slug, icon')
+    .eq('id', data.category_id)
+    .maybeSingle();
+
+  console.error('[DEBUG] step2 error:', catErr ? JSON.stringify(catErr) : 'none');
+  console.error('[DEBUG] step2 cat:', cat ? JSON.stringify(cat) : 'null');
+  if (catErr) { console.error('[DEBUG] step2 throws'); throw catErr; }
+
+  res.json({ step: 2, ok: true, name: data.name, cat: cat });
   return;
 }));
 
