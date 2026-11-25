@@ -50,13 +50,17 @@ export const channelsApi = {
   hot: () => api.get('/channels/hot'),
   create: (data) => api.post('/channels', data),
   click: (id) => api.post(`/channels/${id}/click`),
+  report: (id, { reason_code, reason_text }) => api.post(`/channels/${id}/report`, { reason_code, reason_text }),
 }
 
 // --- Admin ---
 export const adminApi = {
   pendingChannels: () => api.get('/admin/pending/channels'),
   approveChannel: (id) => api.post(`/admin/channels/${id}/approve`),
+  batchApprove: (ids) => api.post('/admin/channels/batch-approve', { ids }),
   rejectChannel: (id, data) => api.post(`/admin/channels/${id}/reject`, data),
+  batchReject: (ids, reason_code, reason_text) => api.post('/admin/channels/batch-reject', { ids, reason_code, reason_text }),
+  reports: (status = 'pending') => api.get('/admin/reports', { params: { status } }),
   users: () => api.get('/admin/users'),
   setRole: (userId, role) => api.post(`/admin/users/${userId}/role`, { role }),
   banUser: (userId, banned) => api.post(`/admin/users/${userId}/ban`, { banned }),
