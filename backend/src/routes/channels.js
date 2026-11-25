@@ -89,7 +89,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
 
-  console.error('[DEBUG] step1 ok, category_id=', data.category_id);
+  console.error('[DEBUG] step1 ok, owner_id=', data.owner_id);
 
   // STEP 2: 补充 categories
   const { data: cat, error: catErr } = await db
@@ -97,12 +97,22 @@ router.get('/:id', asyncHandler(async (req, res) => {
     .select('name_zh, name_en, slug, icon')
     .eq('id', data.category_id)
     .maybeSingle();
+  if (catErr) throw catErr;
+  if (cat) data.categories = cat;
 
-  console.error('[DEBUG] step2 error:', catErr ? JSON.stringify(catErr) : 'none');
-  console.error('[DEBUG] step2 cat:', cat ? JSON.stringify(cat) : 'null');
-  if (catErr) { console.error('[DEBUG] step2 throws'); throw catErr; }
+  // STEP 3: 补充 owner
+  const { data: owner, error: ownerErr } = await db
+    .from('users')
+    .select('email_masked, display_name')
+    .eq('id', data.owner_id)
+    .maybeSingle();
 
-  res.json({ step: 2, ok: true, name: data.name, cat: cat });
+  console.error('[DEBUG] step3 ownerErr:', ownerErr ? JSON.stringify(ownerErr) : 'none');
+  console.error('[DEBUG] step3 owner:', owner ? JSON.stringify(owner) : 'null');
+  if (ownerErr) { console.error('[DEBUG] step3 throws'); throw ownerErr; }
+  if (owner) data.owner = owner;
+
+  res.json({ step: 3, ok: true, name: data.name, cat: data.categories, owner: data.owner });
   return;
 }));
 
