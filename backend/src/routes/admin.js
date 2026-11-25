@@ -31,36 +31,21 @@ router.get('/pending/ads', asyncHandler(async (req, res) => {
 
 // POST /channels/:id/approve
 router.post('/channels/:id/approve', asyncHandler(async (req, res) => {
-  const id = req.params.id;
+  await _approveOne(req.params.id, req.user, supabase());
+  res.json({ ok: true });
+}));
+
+// POST /channels/batch-approve — 批量审核
+router.post('/channels/batch-approve', zMiddleware(z.object({ ids: z.array(z.string().uuid()).min(1).max(50) })), asyncHandler(async (req, res) => {
   const db = supabase();
-
-  const { data: ch, error: findErr } = await db.from('channels').select('*, owner:users!inner(email, display_name)').eq('id', id).maybeSingle();
-  if (findErr) throw findErr;
-  if (!ch) throw new AppError('CHANNEL_NOT_FOUND');
-  if (ch.status !== 'pending_audit') throw new AppError('CHANNEL_STATE_LOCKED');
-
-  const { data, error } = await db
-    .from('channels')
-    .update({ status: 'approved', approved_at: new Date().toISOString(), audit_notes: `approved by admin ${req.user.id}` })
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw error;
-
-  // 审计日志
-  await db.from('audits').insert({
-    target_type: 'channel', target_id: id, action: 'approve',
-    auditor_id: req.user.id, created_at: new Date().toISOString(),
-  });
-
-  // 邮件通知
-  try {
-    const site = process.env.SITE_URL || 'https://sotto-admin.pages.dev';
-    const tmpl = email.channelApprovedEmail(ch.name, `${site}/channels/${id}`);
-    await email.sendEmail({ to: ch.owner.email, ...tmpl });
-  } catch { /* 邮件失败不阻塞审核 */ }
-
-  res.json(data);
+  let approved = 0, skipped = 0;
+  for (const id of req.body.ids) {
+    try {
+      await _approveOne(id, req.user, db);
+      approved++;
+    } catch { skipped++; }
+  }
+  res.json({ ok: true, approved, skipped });
 }));
 
 // POST /channels/:id/reject
@@ -70,29 +55,70 @@ router.post('/channels/:id/reject', asyncHandler(async (req, res) => {
     reason_text: z.string().trim().max(200).optional(),
   });
   const { reason_code, reason_text } = schema.parse(req.body);
-  const id = req.params.id;
-  const db = supabase();
+  await _rejectOne(req.params.id, reason_code, reason_text, req.user, supabase());
+  res.json({ ok: true });
+}));
 
+// POST /channels/batch-reject — 批量拒绝
+router.post('/channels/batch-reject', zMiddleware(z.object({
+  ids: z.array(z.string().uuid()).min(1).max(50),
+  reason_code: z.enum(['CONTENT_VIOLATION', 'CATEGORY_MISMATCH', 'INVALID_LINK', 'DUPLICATE', 'PASSWORDED', 'SPAM', 'BOT']),
+  reason_text: z.string().trim().max(200).optional(),
+})), asyncHandler(async (req, res) => {
+  const db = supabase();
+  let rejected = 0, skipped = 0;
+  for (const id of req.body.ids) {
+    try {
+      await _rejectOne(id, req.body.reason_code, req.body.reason_text, req.user, db);
+      rejected++;
+    } catch { skipped++; }
+  }
+  res.json({ ok: true, rejected, skipped });
+}));
+
+// --- 辅助函数 ---
+async function _approveOne(id, admin, db) {
   const { data: ch, error: findErr } = await db.from('channels').select('*, owner:users!inner(email, display_name)').eq('id', id).maybeSingle();
   if (findErr) throw findErr;
   if (!ch) throw new AppError('CHANNEL_NOT_FOUND');
   if (ch.status !== 'pending_audit') throw new AppError('CHANNEL_STATE_LOCKED');
 
-  const { data, error } = await db
+  const { error } = await db
+    .from('channels')
+    .update({ status: 'approved', approved_at: new Date().toISOString(), audit_notes: `approved by admin ${admin.id}` })
+    .eq('id', id);
+  if (error) throw error;
+
+  await db.from('audits').insert({
+    target_type: 'channel', target_id: id, action: 'approve',
+    auditor_id: admin.id, created_at: new Date().toISOString(),
+  });
+
+  try {
+    const site = process.env.SITE_URL || 'https://sotto-admin.pages.dev';
+    const tmpl = email.channelApprovedEmail(ch.name, `${site}/channels/${id}`);
+    await email.sendEmail({ to: ch.owner.email, ...tmpl });
+  } catch {}
+}
+
+async function _rejectOne(id, reason_code, reason_text, admin, db) {
+  const { data: ch, error: findErr } = await db.from('channels').select('*, owner:users!inner(email, display_name)').eq('id', id).maybeSingle();
+  if (findErr) throw findErr;
+  if (!ch) throw new AppError('CHANNEL_NOT_FOUND');
+  if (ch.status !== 'pending_audit') throw new AppError('CHANNEL_STATE_LOCKED');
+
+  const { error } = await db
     .from('channels')
     .update({ status: 'rejected', rejected_reason: reason_code, audit_notes: reason_text || reason_code })
-    .eq('id', id)
-    .select()
-    .single();
+    .eq('id', id);
   if (error) throw error;
 
   await db.from('audits').insert({
     target_type: 'channel', target_id: id, action: 'reject',
-    reason_code, reason_text, auditor_id: req.user.id,
+    reason_code, reason_text, auditor_id: admin.id,
     created_at: new Date().toISOString(),
   });
 
-  // 邮件通知
   try {
     const site = process.env.SITE_URL || 'https://sotto-admin.pages.dev';
     const reasonMap = {
@@ -103,9 +129,14 @@ router.post('/channels/:id/reject', asyncHandler(async (req, res) => {
     const tmpl = email.channelRejectedEmail(ch.name, reasonMap[reason_code] + (reason_text ? ` — ${reason_text}` : ''), `${site}/channels/submit?edit=${id}`);
     await email.sendEmail({ to: ch.owner.email, ...tmpl });
   } catch {}
+}
 
-  res.json(data);
-}));
+// zMiddleware — 把 zod schema 中间件化
+function zMiddleware(schema) {
+  return (req, res, next) => {
+    try { schema.parse(req.body); next(); } catch (e) { next(e); }
+  };
+}
 
 // POST /users/:id/role
 router.post('/users/:id/role', asyncHandler(async (req, res) => {

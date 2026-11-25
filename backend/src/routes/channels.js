@@ -128,6 +128,66 @@ router.post('/:id/click', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// POST /api/channels/:id/report — 举报频道（需登录）
+const reportSchema = z.object({
+  reason_code: z.enum(['CONTENT_VIOLATION', 'SPAM', 'INVALID_LINK', 'MISLEADING', 'COPYRIGHT', 'HARASSMENT', 'OTHER']),
+  reason_text: z.string().trim().max(500).optional(),
+});
+
+router.post('/:id/report', requireLogin, asyncHandler(async (req, res) => {
+  const { reason_code, reason_text } = reportSchema.parse(req.body);
+  const db = supabase();
+  const channelId = req.params.id;
+
+  // 确认频道存在且已公开
+  const { data: ch, error: findErr } = await db
+    .from('channels').select('id, name').eq('id', channelId).maybeSingle();
+  if (findErr) throw findErr;
+  if (!ch) throw new AppError('CHANNEL_NOT_FOUND');
+
+  // 防重复举报（同一用户 10 分钟内同一频道）
+  const { data: dup } = await db
+    .from('reports')
+    .select('id')
+    .eq('channel_id', channelId)
+    .eq('reporter_id', req.user.id)
+    .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .maybeSingle();
+  if (dup) throw new AppError('DUPLICATE_REPORT', { hint: '你最近已经举报过这个频道了' });
+
+  const { error } = await db
+    .from('reports')
+    .insert({
+      channel_id: channelId,
+      reporter_id: req.user.id,
+      reason_code,
+      reason_text: reason_text || null,
+      status: 'pending',
+    });
+  if (error) throw error;
+
+  // 通知 Admin
+  try {
+    const email = require('../lib/resend-client');
+    const adminTo = process.env.ADMIN_ALERT_EMAIL;
+    if (adminTo) {
+      const reasonMap = {
+        CONTENT_VIOLATION: '内容违规', SPAM: '垃圾信息', INVALID_LINK: '无效链接',
+        MISLEADING: '误导信息', COPYRIGHT: '侵权', HARASSMENT: '骚扰', OTHER: '其他',
+      };
+      await email.sendEmail({
+        to: adminTo,
+        subject: `[Sotto] 新举报: ${ch.name}`,
+        html: `<p>频道 <b>${ch.name}</b> 被举报</p>
+               <p>原因: <b>${reasonMap[reason_code]}</b>${reason_text ? `<br>详情: ${reason_text}` : ''}</p>
+               <p>频道ID: ${channelId}</p>`,
+      });
+    }
+  } catch { /* 通知失败不阻塞 */ }
+
+  res.status(201).json({ ok: true });
+}));
+
 // --- 登录后路由 ---
 
 const submitSchema = z.object({
