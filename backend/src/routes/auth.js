@@ -59,9 +59,11 @@ router.post('/verify-code', rateLimit({ limit: 10, windowSec: 60, keyFn: req => 
 
   let userId;
   if (!existing) {
+    const newId = crypto.randomUUID();
     const { data: newUser, error: insertErr } = await db
       .from('users')
       .insert({
+        id: newId,
         email,
         email_hash: emailHash,
         email_masked: emailMasked,
