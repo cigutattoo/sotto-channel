@@ -76,39 +76,49 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const db = supabase();
   const id = req.params.id;
 
-  // 简化版: 分步查询避免复杂 JOIN 问题
+  console.error('[DEBUG] entering detail, id=', id);
+
+  // TEMP: 硬编码返回，验证新代码是否生效
+  res.json({ hello: 'world', id });
+  return;
+
+  // STEP 1: 先查 channels 表
   const { data, error } = await db
     .from('channels')
     .select('*')
     .eq('id', id)
     .maybeSingle();
 
-  if (error) {
-    console.error('[channel-detail] error:', error.code, error.message);
-    throw error;
-  }
+  console.error('[DEBUG] step1 result:', error ? 'error=' + error.message : 'ok, data=' + !!data);
+
+  if (error) throw error;
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
 
-  // 补充 categories
-  const { data: cat } = await db
+  // STEP 2: 补充 categories
+  const { data: cat, error: catErr } = await db
     .from('categories')
     .select('name_zh, name_en, slug, icon')
     .eq('id', data.category_id)
     .maybeSingle();
+
+  console.error('[DEBUG] step2 cat:', catErr ? 'error=' + catErr.message : 'ok');
   if (cat) data.categories = cat;
 
-  // 补充 owner
-  const { data: owner } = await db
+  // STEP 3: 补充 owner
+  const { data: owner, error: ownerErr } = await db
     .from('users')
     .select('email_masked, display_name')
     .eq('id', data.owner_id)
     .maybeSingle();
+
+  console.error('[DEBUG] step3 owner:', ownerErr ? 'error=' + ownerErr.message : 'ok');
   if (owner) data.owner = owner;
 
-  // view_count +1
-  await db.rpc('increment_view_count', { channel_id: id }).catch(() => {});
+  // STEP 4: view_count +1
+  await db.rpc('increment_view_count', { channel_id: id }).catch(e => console.error('[DEBUG] rpc err:', e?.message));
 
+  console.error('[DEBUG] all steps done, sending response');
   res.json(data);
 }));
 
