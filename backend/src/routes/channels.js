@@ -76,9 +76,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const db = supabase();
   const id = req.params.id;
 
-  console.error('[DEBUG] entering detail, id=', id);
-
-  // STEP 1: 先查 channels 表
+  // 分步查询 (避免复杂 JOIN 问题)
   const { data, error } = await db
     .from('channels')
     .select('*')
@@ -89,37 +87,40 @@ router.get('/:id', asyncHandler(async (req, res) => {
   if (!data) throw new AppError('CHANNEL_NOT_FOUND');
   if (data.status !== 'approved') throw new AppError('CHANNEL_NOT_FOUND');
 
-  console.error('[DEBUG] step1 ok, owner_id=', data.owner_id);
-
-  // STEP 2: 补充 categories
-  const { data: cat, error: catErr } = await db
+  // 补充 categories
+  const { data: cat } = await db
     .from('categories')
     .select('name_zh, name_en, slug, icon')
     .eq('id', data.category_id)
     .maybeSingle();
-  if (catErr) throw catErr;
   if (cat) data.categories = cat;
 
-  // STEP 3: 补充 owner
-  const { data: owner, error: ownerErr } = await db
+  // 补充 owner
+  const { data: owner } = await db
     .from('users')
     .select('email_masked, display_name')
     .eq('id', data.owner_id)
     .maybeSingle();
-
-  console.error('[DEBUG] step3 ownerErr:', ownerErr ? JSON.stringify(ownerErr) : 'none');
-  console.error('[DEBUG] step3 owner:', owner ? JSON.stringify(owner) : 'null');
-  if (ownerErr) { console.error('[DEBUG] step3 throws'); throw ownerErr; }
   if (owner) data.owner = owner;
 
-  res.json({ step: 3, ok: true, name: data.name, cat: data.categories, owner: data.owner });
-  return;
+  // view_count +1 (RPC 可能不存在, 安全降级)
+  try {
+    await db.rpc('increment_view_count', { channel_id: id });
+  } catch (rpcErr) {
+    console.error('[channel-detail] view_count RPC failed:', rpcErr?.message);
+  }
+
+  res.json(data);
 }));
 
 // POST /api/channels/:id/click — 记录加入按钮点击
 router.post('/:id/click', asyncHandler(async (req, res) => {
   const db = supabase();
-  await db.rpc('increment_click_count', { channel_id: req.params.id }).catch(() => {});
+  try {
+    await db.rpc('increment_click_count', { channel_id: req.params.id });
+  } catch (rpcErr) {
+    console.error('[channel-click] RPC failed:', rpcErr?.message);
+  }
   res.json({ ok: true });
 }));
 
