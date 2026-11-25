@@ -47,8 +47,20 @@ function createApp() {
     redact: ['req.headers.authorization', 'req.cookies.session_token'],
   }));
 
+  // CORS: 支持环境变量逗号分隔多域名 + 所有 CF Pages 预览子域名
+  const corsOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  // 放行所有 *.sotto-admin.pages.dev（每次部署新子域名都不需要改 env）
+  const pagesDevRegex = /\.sotto-admin\.pages\.dev$/;
   app.use(cors({
-    origin: process.env.CORS_ORIGIN || true,
+    origin(origin, cb) {
+      if (!origin) return cb(null, true);
+      if (corsOrigins.includes(origin)) return cb(null, origin);
+      if (pagesDevRegex.test(origin)) return cb(null, origin);
+      return cb(null, true); // fallback 放行（开发/自建）
+    },
     credentials: true,
   }));
 
