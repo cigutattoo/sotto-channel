@@ -39,9 +39,22 @@ function errorHandler(err, req, res, _next) {
     return;
   }
 
-  // 未知错误: 500
-  req.log?.error({ err }, 'unhandled error');
-  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR'), req));
+  // 未知错误: 500 — 完整 dump Supabase 错误字段
+  const dump = {
+    err_code: err?.code,
+    err_message: err?.message,
+    err_details: err?.details,
+    err_hint: err?.hint,
+    err_status: err?.status,
+    err_statusCode: err?.statusCode,
+    err_name: err?.name,
+    err_stack: err?.stack?.substring(0, 600),
+    req_method: req.method,
+    req_url: req.url,
+  };
+  req.log?.error(dump, 'unhandled error');
+  console.error('[500 ERROR]', JSON.stringify(dump, null, 2));
+  res.status(500).json(createErrorResponse(new AppError('INTERNAL_ERROR', { hint: err?.details || err?.message || err?.hint }), req));
 }
 
 // 404 兜底
