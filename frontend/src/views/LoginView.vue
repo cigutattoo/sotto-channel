@@ -64,8 +64,8 @@ async function verifyCode() {
     router.push(redirect)
   } catch (e) {
     const msg = e.response?.data?.error?.message
-    if (e.response?.data?.error?.code === 'INVALID_CODE') {
-      errorMsg.value = msg + ` (还剩 ${e.response.data.remaining_attempts} 次尝试)`
+    if (e.response?.data?.error?.code === 'CODE_INVALID') {
+      errorMsg.value = msg || '验证码错误'
     } else if (e.response?.data?.error?.code === 'CODE_EXPIRED') {
       errorMsg.value = '验证码已过期，请重新发送'
     } else {

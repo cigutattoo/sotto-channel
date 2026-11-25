@@ -71,10 +71,10 @@ const router = createRouter({
   scrollBehavior() { return { top: 0 } },
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const auth = useAuthStore()
   if (!auth.isInitialized) {
-    auth.init() // 检查 cookie 里的 session_token
+    await auth.init() // 必须等待，否则首屏会误判未登录
   }
 
   if (to.meta.requiresAuth && !auth.isLoggedIn) {

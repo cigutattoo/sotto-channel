@@ -7,7 +7,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(null) // { id, email, email_masked, email_verified, role, status, created_at }
   const loading = ref(false)
 
-  const isLoggedIn = computed(() => !!user.value?.email_verified)
+  // 能成功拿到 /api/me 即视为已登录（后端 /me 不返回 email_verified 字段）
+  const isLoggedIn = computed(() => !!user.value?.id)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
   async function init() {

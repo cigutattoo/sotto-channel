@@ -43,7 +43,7 @@ function statusBadge(status) {
           <div class="mt-4 gap-8">
             <span v-if="auth.isAdmin" class="badge badge-admin">管理员</span>
             <span v-if="auth.user?.status === 'banned'" class="badge badge-banned">已封禁</span>
-            <span v-if="auth.user?.email_verified" class="badge badge-verified">邮箱已验证</span>
+            <span v-if="auth.user?.id" class="badge badge-verified">邮箱已验证</span>
           </div>
         </div>
         <button class="btn btn-ghost" @click="auth.logout()">退出登录</button>
