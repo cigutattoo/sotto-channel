@@ -26,6 +26,11 @@ async function createSession(userId, ip, ua) {
   const token = generateToken(userId);
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
 
+  // Postgres inet 类型只接受单个 IP —— X-Forwarded-For 可能逗号分隔多个
+  const singleIp = ip
+    ? String(ip).split(',')[0].trim()
+    : null;
+
   const db = supabase();
   const { error } = await db
     .from('sessions')
@@ -35,7 +40,7 @@ async function createSession(userId, ip, ua) {
       created_at: new Date().toISOString(),
       expires_at: expiresAt.toISOString(),
       user_agent: ua,
-      ip: ip ? String(ip) : null,
+      ip: singleIp,
     });
 
   if (error) throw error;
