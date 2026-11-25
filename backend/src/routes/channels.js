@@ -107,7 +107,9 @@ router.get('/:id', asyncHandler(async (req, res) => {
   try {
     await db.rpc('increment_view_count', { channel_id: id });
   } catch (rpcErr) {
-    console.error('[channel-detail] view_count RPC failed:', rpcErr?.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[channel-detail] view_count RPC failed:', rpcErr?.message);
+    }
   }
 
   res.json(data);
@@ -119,7 +121,9 @@ router.post('/:id/click', asyncHandler(async (req, res) => {
   try {
     await db.rpc('increment_click_count', { channel_id: req.params.id });
   } catch (rpcErr) {
-    console.error('[channel-click] RPC failed:', rpcErr?.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[channel-click] RPC failed:', rpcErr?.message);
+    }
   }
   res.json({ ok: true });
 }));
